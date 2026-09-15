@@ -152,6 +152,52 @@ class AIM(api.CalibratedMechanism):
     """Returns the DP event for the AIM mechanism."""
     return dp_accounting.ZCDpEvent(self.zcdp_rho)
 
+  def _select(
+      self,
+      rng: np.random.Generator,
+      candidates: Mapping[mbi.Clique, float],
+      data: mbi.Dataset | mbi.CliqueVector,
+      estimates: mbi.CliqueVector,
+      epsilon: float,
+      sigma: float,
+  ) -> mbi.Clique:
+    """Privately selects the candidate worst approximated by the model.
+
+    This is one of the two points where AIM touches the sensitive data (the
+    other being `_measure`). Subclasses may override it to change how the
+    selection step is computed (e.g. under encryption) without duplicating the
+    main loop in `__call__`.
+    """
+    return _worst_approximated(
+        rng,
+        candidates,
+        data,
+        estimates,
+        epsilon,
+        sigma,
+        data.domain,
+        max_records_per_user=self.max_records_per_user,
+    )
+
+  def _measure(
+      self,
+      rng: np.random.Generator,
+      data: mbi.Dataset | mbi.CliqueVector,
+      clique: mbi.Clique,
+      sigma: float,
+  ) -> mbi.LinearMeasurement:
+    """Measures a single marginal query with the Gaussian mechanism.
+
+    See `_select` for why this is a method.
+    """
+    return common.measure_marginals_with_noise(
+        rng,
+        data,  # pyrefly: ignore[bad-argument-type]
+        [clique],  # pyrefly: ignore[bad-argument-type]
+        sigma,
+        max_records_per_user=self.max_records_per_user,
+    )[0]
+
   def __call__(
       self,
       rng: np.random.Generator,
@@ -210,15 +256,8 @@ class AIM(api.CalibratedMechanism):
         estimates = mbi.marginal_oracles.bulk_variable_elimination(
             model.potentials, list(small_candidates), total=model.total  # pyrefly: ignore[bad-argument-type]
         )
-        marginal_query = _worst_approximated(
-            rng,
-            small_candidates,
-            data,
-            estimates,
-            epsilon,
-            sigma,
-            data.domain,
-            max_records_per_user=self.max_records_per_user,
+        marginal_query = self._select(
+            rng, small_candidates, data, estimates, epsilon, sigma
         )
 
       summary = mbi.summarize(
@@ -240,13 +279,7 @@ class AIM(api.CalibratedMechanism):
       # Measure the marginal query privately using the Gaussian mechanism. #
       ######################################################################
       with common.timed(phase_times, 'measurement'):
-        measurement = common.measure_marginals_with_noise(
-            rng,
-            data,  # pyrefly: ignore[bad-argument-type]
-            [marginal_query],  # pyrefly: ignore[bad-argument-type]
-            sigma,
-            max_records_per_user=self.max_records_per_user,
-        )[0]
+        measurement = self._measure(rng, data, marginal_query, sigma)
         measurements.append(measurement)
         old_estimate = model.project(marginal_query).datavector()
 

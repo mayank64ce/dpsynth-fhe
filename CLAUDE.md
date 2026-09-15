@@ -125,6 +125,13 @@ go through `pipeline_dp.DPEngine`.
 - `adapters/`: Pydantic, protobuf, and Beam adapters over the core API.
 - `experimental/`, `contrib/`: staging areas. New standalone mechanisms go in
   `contrib/` first.
+- `contrib/fhe/`: FHAIM (arXiv 2602.05838), AIM with selection and measurement
+  under homomorphic encryption. `AIM` exposes `_select` and `_measure` hooks
+  for exactly this purpose; `FHAIM` overrides them and inherits the loop.
+  Arithmetic goes through `FHEBackend`; `PlaintextBackend` is the NumPy
+  simulation used in tests. Run `FHAIMConfig` directly on an `mbi.Dataset`,
+  not inside `DiscreteConfig`. Reference FHE code lives on the `HE_*` branches
+  of the `mbi/` submodule (not used by the install).
 - `eval/`: tabular evaluation engine (TV distance, Cramer's V), CLI
   `bin/run_tabular_eval.py`.
 
